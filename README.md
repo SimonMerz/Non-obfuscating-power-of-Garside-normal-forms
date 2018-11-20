@@ -1,4 +1,4 @@
-# Non-obfuscation-of-Garside-normal-form
+# Non obfuscating power of Garside normal forms
 This project contains the necessary parts of WalnutDSA^TM and our universal forgery attack on it implemented in MAGMA. Moreover, it contains our decomposition algorithm to solve some instances of the conjugacy search problem in braid groups.
 
 The necessary parts of WalnutDSA^TM to generate signatures can be found in Walnut.txt. Our attack on the signature scheme is implemented in Attack.txt as well as a function to verify whether our universal forgery attack was successful. 
