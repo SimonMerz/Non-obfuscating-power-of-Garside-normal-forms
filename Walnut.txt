@@ -1,0 +1,251 @@
+/* -------------------------------------
+Simon-Philipp Merz September 2018
+See "On the (non) obfuscating powers of WalnutDSA" by Simon-Philipp Merz and Christophe Petit
+
+This file contains the necessary parts of WalnutDSA implemented in MAGMA to test our attack.
+---------------------------------------*/
+
+
+/* WalnutDSA parameters */
+// Number of strands in the braid group
+N := 10; 
+
+// Security Level 128 or 256
+SecLvl := 128; 
+
+// Length of secret1 braid in Artin generators 
+// (132 or 287 in WalnutDSA depending on security level)
+l1 := 132; 
+// Length of secret2 braid in Artin generators
+l2 := l1; 
+
+
+/* Functions */
+// Define Braid group
+B := BraidGroup(N: Presentation := "Artin");
+
+/* Message Encoder
+This function encodes the digest of some cryptographic hash function, given
+as a sequence of bits, to some pure braid in B. In the current version of 
+WalnutDSA the digest of some message is of length 2*SecLvl. 
+
+Input: 	msg_digest (sequence of bits)
+Output:	EncodedMSG (pure braid) */
+
+encode_msg := function(msg_digest)
+	EncodedMSG := Id(B);
+
+	// Set of indices of pure braid generators used to encode messages
+	// For N=10, S := [[3,5,7,9],[2,4,6,8],[1,3,5,7], [2,4,6,8]];
+	// For N=12, S := [[5,7,9,11],[4,6,8,10],[3,5,7,9],[2,4,6,8],
+	// [1,3,5,7], [2,4,6,8], [3,5,7,9],[4,6,8,10]];
+
+	// Generally for any N,
+	S := [];
+	for i in [1..(N-8)] do
+		S[N-8+i] := [i, i+2, i+4, i+6];
+		S[N-7-i] := [i+1, i+3, i+5, i+7];
+	end for;
+
+	for i in [1..SecLvl] do
+		// Determine tuple within S, termed Si, and then exact index 
+		// of braid encoding a 2-bit piece of the digest
+		Si := S[i mod #S +1];
+		if msg_digest[2*i-1..2*i] eq [0,0] then
+			j := Si[1];
+		elif msg_digest[2*i-1..2*i] eq [0,1] then
+			j := Si[2];
+		elif msg_digest[2*i-1..2*i] eq [1,0] then
+			j := Si[3];
+		else	
+			j := Si[4];
+		end if;
+		// Append square of pure braid to encoding of message
+		EncodedMSG := EncodedMSG * B.<N,j>^2;
+	end for;
+	return EncodedMSG;
+end function;
+
+
+/* Generate braid inducing some given permutation
+
+Input:	Perm (element of symmetric group Sym(N))
+Output: final_braid (element of braid group B such that final_braid 
+	induces permutation Perm) */
+
+generate_braid_with_perm := function(Perm)
+	//Rewrite Perm using transpositions
+	final_braid := CFP(Id(B));
+	for i in [1..N] do
+		Perm_seq := Eltseq(Perm);	
+		if Perm_seq[i] ne i then
+			transposition := Sym(N) ! (i, Perm_seq[i]); 
+			l := #final_braid[3] + 1;
+			final_braid[3][l] := transposition;
+			Perm := Perm * transposition;
+		end if;
+	end for;
+	final_braid := B ! final_braid; 
+	// By construction final_braid induces inverse permutation of Perm 
+
+	final_braid := final_braid^-1;
+	return final_braid;
+end function;
+
+
+/* Generate a cloaking element 
+Given some permutation, compute a pure braid that cloakes this permutation.
+
+Input: 	Perm (element of the symmetric group Sym(N))
+Output: final_braid (pure braid in B, cloakes permutation Perm) */
+
+
+generate_cloaking_elt := function(Perm)
+	max_attempts := 25;
+	max_order_encountered := 0;
+	rand := Random(2,N-1); 
+	// Determines the central Artin generator of cloaking element
+	x := [1..N];
+		
+	// Compute preimages (a,b) of (1,2) under action of Perm 
+	// Note, (1,2) could be any other position of the T-values 
+	// that are inverses of each other
+	Permx := x ^ Perm;
+	for i in [1..N] do
+		if Permx[i] eq 1 then
+			a := i;
+			break;
+		end if;
+	end for;
+
+	for i in [1..N] do
+		if Permx[i] eq 2 then
+			b := i;
+			break;
+		end if;
+	end for;
+
+	for j in [1..max_attempts] do
+		random_perm := Random(Sym(N));
+		random_permx := x ^ random_perm;
+
+		// Find permutation preimage of a and b under random_perm 
+		// and swap entries with rand, rand+1 resp.
+		for i in [1..N] do
+			if random_permx[i]  eq a then
+				random_permx[i] := random_permx[rand];
+				random_permx[rand] := a;
+				break;
+			end if;	
+		end for;
+
+		for i in [1..N] do
+			if random_permx[i]  eq b then
+				random_permx[i] := random_permx[rand+1];
+				random_permx[rand+1] := b;
+				break;
+			end if;	
+		end for;
+		
+		random_perm := Sym(N) ! random_permx;
+
+		// Compute order of generated random permutation and save 
+	 	// if order is greater than the maximum encountered so far
+		if Order(random_perm) gt max_order_encountered then
+			max_order_encountered := Order(random_perm);
+			final_perm := random_perm;
+		end if;
+	end for;
+
+	// Generate braid with permutation equal to final_perm
+	w := generate_braid_with_perm(final_perm);
+
+	final_braid := w * B.<rand,rand+1>^4 * w^-1;
+	return final_braid;
+end function;
+
+
+/* Generate signature
+Given the digest of some message, msg_digest, given as a sequence 
+of 2*SecLvl bits and two private braids secret1 and secret2, this function 
+legitimately produces a signature for the message.
+
+Input:	msg_digest (sequence of 2*SecLvl bits)
+	secret1, secret2 (private braids in B of length l1, l2 resp.)
+Output:	sig (braid in B signing message with digest msg_digest)
+
+Moreover, we put W1, W2 out, which are the braids containing the secret 
+keys, cloaking elements and concealed cloaking elements towards the left
+and right of the encoded message in signature. These braids will not be 
+used in our attack, but to verify whether the attack worked correctly 
+afterwards. */
+
+generate_sig := function(msg_digest, secret1, secret2)
+	EncodedMSG := encode_msg(msg_digest);
+	
+	// Generate cloaking elements v1, v, v2 for the permutations 
+	// induced by secret1, Id(B) and secret2 respectively
+	perm1 := InducedPermutation(secret1);
+	v1 := generate_cloaking_elt(perm1);
+
+	perm2 := InducedPermutation(secret2);
+	v2 := generate_cloaking_elt(perm2);
+
+	v := generate_cloaking_elt(Sym(N) ! 1);
+
+	// Compute the braids left and right of the encoding first, 
+	// to add additional concealed cloaking elements
+	W1 := v1 * secret1^-1 * v;
+	W2 := secret2 * v2;
+
+	/* Add Num_concealed_cloaking_elt concealed cloaking elements. 
+	The number of concealed cloaking elements was specified to be greater 
+	than 2*security_level/log(N!). */
+	N_fac := 1;
+	for i in [1..N] do
+		N_fac := N_fac * i;
+	end for; 
+	Num_concealed_cloaking_elt := Ceiling(2*SecLvl/(Log(N_fac)/Log(2))); 
+
+	for i in [1..Num_concealed_cloaking_elt] do
+		// Choose W1 or W2 at random
+		j := Random({1,2});
+		// Split W1 or W2 at some random position into two parts and 
+		// add concealed cloaking element in between
+		if j eq 1 then
+			Wleft := CFP(W1);
+			Wright := CFP(Id(B));
+			k := Random(1,#Wleft[3]);
+			for m in [k..#Wleft[3]] do
+				Wright[3][m-k+1] := Wleft[3][k];
+				Wleft[3][k] := Sym(N) ! 1;
+			end for;
+			Wleft := B ! Wleft;
+			Wright := B ! Wright;
+			perm := InducedPermutation(Wleft);
+			concealed_cloaking_elt := generate_cloaking_elt(perm);
+			
+			W1 := Wleft * concealed_cloaking_elt * Wright;
+		else
+			Wleft := CFP(W2);
+			Wright := CFP(Id(B));
+			k := Random(1,#Wleft[3]);
+			for m in [k..#Wleft[3]] do
+				Wright[3][m-k+1] := Wleft[3][k];
+				Wleft[3][k] := Sym(N) ! 1;
+			end for;
+			Wleft := B ! Wleft;
+			Wright := B ! Wright;
+			perm := InducedPermutation(Wleft);
+			concealed_cloaking_elt := generate_cloaking_elt(perm);
+			
+			W2 := Wleft * concealed_cloaking_elt * Wright;
+		end if;
+	end for;
+	
+	// Compute signature
+	Sig := W1 * EncodedMSG * W2;
+	return Sig, W1, W2;
+end function;
+	
+

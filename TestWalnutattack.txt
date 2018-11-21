@@ -1,0 +1,68 @@
+/* -------------------------------------
+Simon-Philipp Merz September 2018 
+See "On the (non) obfuscating powers of WalnutDSA" by Simon-Philipp Merz and Christophe Petit
+
+This file allows to test our attack on WalnutDSA on a number of instances.
+---------------------------------------*/
+
+
+/* Test parameters */
+//Number of instances we test our attack for the parameters above
+Trials := 1000;
+
+
+/* Test 
+Randomly generate "Trials" instances of messages, sign message legitimately
+and recover equivalent braids of private keys. Then, check whether our 
+forgery is valid and produces valid signatures.*/
+
+b := 0;
+c := 0;
+
+for i in [1..Trials] do
+
+// Randomly generate two braids secret1 and secret2 of length l1 
+// and l2 in Artin generators, resp.
+	secret1 := Random(B, l1, l1: Presentation := "Artin"); 
+	secret2 := Random(B, l2, l2: Presentation := "Artin");
+
+// Generate sequence of bits of length 2*SecLvl simulating digest of MSG1
+	MSG1 := [];
+	for j in [1..2*SecLvl] do
+		MSG1[j] := Random({0,1});
+	end for;
+
+
+// Generate the signatures corresponding to EncodedMSG1 and the braids 
+// W1, W2 such that the signature = W1 * encoded msg * W2
+Sig_MSG1, W1, W2 := generate_sig(MSG1, secret1, secret2);
+
+lengthsig := CanonicalLength(LeftNormalForm(Sig_MSG1));
+
+// Forge W1, W2, i.e. the braids containing the secret braids, 
+// cloaking elements and concealed cloaking elements
+
+W1Forge, W2Forge := forge_sig(Sig_MSG1, MSG1);
+
+// Check whether our forged braids have same permutation braids as W1, W2 resp.
+// (or check whether random we get a valid forgery on random message)
+
+x := verify_forgery(W1, W2, W1Forge, W2Forge);
+
+
+if x eq 1 then
+	print("Successful attack!");
+	b := b+1;
+else
+	print("Forged signature are not necessarily valid.");
+	c:= c+1;
+end if;
+
+
+end for;
+print("Number of successful attacks:");
+print(b);
+print("Number of trials in which attack does not necessarily lead to valid forgeries:");
+print(c);
+
+

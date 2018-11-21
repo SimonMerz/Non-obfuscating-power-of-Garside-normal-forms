@@ -1,0 +1,134 @@
+/* -------------------------------------
+Simon-Philipp Merz September 2018
+See "On the (non) obfuscating powers of WalnutDSA" by Simon-Philipp Merz and Christophe Petit
+
+This file contains functions to generate instances of the CSP problem and functions to solve a given instance using the methods described in our paper above.
+---------------------------------------*/
+
+// Number of strands in the braid group
+N := 10; 
+// Define Braid group
+B := BraidGroup(N: Presentation := "Artin");
+
+
+/* Attack parameters */
+// Number of permutation braids we require to be equal in (reflected) 
+// X and Y = CXC^{-1}, before taking X^k and Y^k and trying to recover C again
+// MaxIterations gives the maximum number of steps we squaring before giving up.
+
+CompLen := 10;
+MaxSteps := 3;  
+
+
+/* Functions */
+
+/* Generate Conjugacy Search Instance
+Given words X and C compute Y := C X C^{-1}
+
+Input: X, C
+Output: X, Y=C X C^{-1}  */
+
+generate_CSI := function(X, C)
+	Y := LeftNormalForm(C * X * C^-1);
+	return X, Y;
+end function;
+
+/* Solving CSP
+Given an instance of the conjugacy search problem, i.e. X and Y with Y = C*X*C^-1 for some C, find C' such that Y = C' * X * C'^-1
+
+Input:	X, Y=C*XC^{-1}
+Output: C' such that Y=C'*X*C'^{-1} */
+
+CSPsolution := function(X, Y)
+	D := FundamentalElement(B); //Fundamental Braid
+
+	// Compute the Garside left normal form of the (reflected) 
+	// X, (i.e. conjugated by D). Then, check whether CompLen permutation braids of (reflected) X
+	// appear in Y. If so, determine position of common permutation braids in (reflected) X and Y.
+
+	MaxIterations := MaxSteps;
+	Conj := 0;
+	XPos := 0;
+	YPos := -1;
+
+	while MaxIterations gt 0 do
+		//Rewrite Y in the Garside normal form
+		LeftNormalForm(~Y);
+		Y_CFP := CFP(Y);
+		for i in [0,1] do 
+			ConjX := LeftNormalForm(D^i * X * D^-i);
+			ConjX_CFP := CFP(ConjX);
+			Len := #ConjX_CFP[3];
+			for j in [1..(Len-CompLen)] do
+				SubConjX := ConjX_CFP[3][j..(j+CompLen)];
+				for k in [1..(#Y_CFP[3]-CompLen)] do
+					if SubConjX eq Y_CFP[3][k..(k+CompLen)] then
+						Conj := i;
+						XPos := j;
+						YPos := k;
+						MaxIterations := 0;
+						break i;
+					end if;
+				end for;
+			end for;
+			if i eq 1 then
+				X := X^4;
+				Y := Y^4;
+				MaxIterations := MaxIterations - 1;
+			end if;
+		end for;
+	end while;	
+
+
+	// If we have found a common subsequence amongst the permutation 
+	// braids, we need to split Y and the (reflected) X
+	// into two parts at position corresponding to each other
+	
+	if YPos ne -1 then
+		Y1 := CFP(Y);
+		Y2 := CFP(Id(B));
+		for i in [YPos..#Y1[3]] do
+			Y2[3][i-YPos+1] := Y1[3][i];
+			Y1[3][i] := Sym(N) ! 1;
+		end for;
+		Y1 := B ! Y1;
+		Y2 := B ! Y2;
+
+		X1 := CFP(ConjX);
+		X2 := CFP(Id(B));
+		for i in [XPos..#X1[3]] do
+			X2[3][i-XPos+1] := X1[3][i];
+			X1[3][i] := Sym(N) ! 1;
+		end for;
+		X1 := B ! X1;
+		X2 := B ! X2;
+
+		// Compute solution to CSP 
+		Cprime:= Y1 * X1^-1 * D^Conj;
+		return Cprime;
+	else
+		//print("WARNING: No common canonical factors found!");
+		return Id(B);
+	end if;
+end function;
+
+
+/* Verification 
+Given a result of our previous algorithm that heuristically tries to 
+find a solution to the CSP, we check whether it solves the CSP, i.e.
+whether Y = Cprime * X * Cprime^-1.
+
+Input: X, Y, Cprime
+Output: 1, if Y=Cprime*X*Cprime^-1 and Cprime is a solution to the CSP
+	0, otherwise */
+
+verify_CSP := function(X, Y, Cprime)
+	if Y eq (Cprime * X * Cprime^-1) then
+		return 1;
+	else
+		return 0;
+	end if;
+end function;
+
+
+

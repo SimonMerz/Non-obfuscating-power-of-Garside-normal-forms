@@ -1,0 +1,159 @@
+/* -------------------------------------
+Simon-Philipp Merz September 2018
+See "On the (non) obfuscating powers of WalnutDSA" by Simon-Philipp Merz and Christophe Petit
+
+This file contains the attack on WalnutDSA implemented in MAGMA using the heuristic established in our paper.
+---------------------------------------*/
+
+/* Attack parameters */
+// Number of permutation braids we require to be equal in (reflected) 
+// encoded message and signature during attack, before adaptively 
+// reducing this number
+InitCompLen := 15; 
+
+/* Attack
+Given one legitimately produced signature Sig_MSG1 for message with 
+digest MSG1, this function produces a pair of braids W1Forge, W2Forge 
+such that W1Forge * Encoded message * W2Forge is a valid signature 
+of any message that encodes to "Encoded message"
+
+Input:	MSG1 (digest of message given as sequence of bits)
+	Sig_MSG1 (braid, which is a legitimately produced signature 
+	for the message MSG1)
+
+Output: W1Forge, W2Forge (braids of B such that 
+	W1Forge * Encoded message * W2Forge  is a valid signature) */
+
+forge_sig := function(Sig_MSG1, MSG1)
+	// Get pure braids encoding the hashes of the messages
+	EncodedMSG1 := encode_msg(MSG1);
+	
+	//Rewrite Sig in the BKL normal form
+	LeftNormalForm(~Sig_MSG1);
+	Sig_CFP := CFP(Sig_MSG1);
+
+	//Fundamental BKL-Braid
+	D := FundamentalElement(B); 
+
+	// Compute the Garside left normal form of the (reflected) 
+	// encoded message, (i.e. conjugated by D). Then, check 
+	// whether CompLen permutation braids of (reflected) EncodedMSG 
+	// appear in the signature. If so, determine position of 
+	// common permutation braids in (reflected) EncodedMSG and Sig.
+
+	CompLen := InitCompLen;
+	Conj := 0;
+	MSGPos := 0;
+	SigPos :=0;
+
+	while CompLen gt 1 do
+	   for i in [0,1] do 
+		ConjMSG := D^i * EncodedMSG1 * D^-i;
+		Len := CanonicalLength(ConjMSG);
+		ConjMSG_CFP := CFP(LeftNormalForm(ConjMSG));
+		for j in [1..(Len-CompLen)] do
+			SubConjMSG := ConjMSG_CFP[3][j..(j+CompLen)];
+			for k in [1..(#Sig_CFP[3]-CompLen)] do
+				if SubConjMSG eq Sig_CFP[3][k..(k+CompLen)] then
+					Conj := i;
+					MSGPos := j;
+					SigPos := k;
+					CompLen := 0; 
+					break i;
+				end if;
+			end for;
+		end for;
+		if i eq 1 then
+			CompLen := CompLen-1;
+		end if;
+	   end for;
+	end while;
+	
+	// If we have found a common subsequence amongst the permutation 
+	// braids, we need to split Sig and the (reflected) encoding 
+	// ConjMSG into two parts at position corresponding to each other
+	
+	if SigPos ne 0 then
+		Sig1 := CFP(Sig_MSG1);
+		Sig2 := CFP(Id(B));
+		for i in [SigPos..#Sig1[3]] do
+			Sig2[3][i-SigPos+1] := Sig1[3][i];
+			Sig1[3][i] := Sym(N) ! 1;
+		end for;
+		Sig1 := B ! Sig1;
+		Sig2 := B ! Sig2;
+
+		Enc1 := CFP(ConjMSG);
+		Enc2 := CFP(Id(B));
+		for i in [MSGPos..#Enc1[3]] do
+			Enc2[3][i-MSGPos+1] := Enc1[3][i];
+			Enc1[3][i] := Sym(N) ! 1;
+		end for;
+		Enc1 := B ! Enc1;
+		Enc2 := B ! Enc2;
+
+		// Compute braids W1Forge, W2Forge that allow universal 
+		// forgery of message to W1Forge * Encoded message * W2Forge, 
+		// i.e. braids such that W1 = W1Forge mod D^2 and 
+		// W2 = W2Forge mod D^2
+		W1Forge := Sig1 * Enc1^-1 * D^Conj;
+		W2Forge := D^-Conj * Enc2^-1 * Sig2;
+		return W1Forge, W2Forge;
+	else
+		print("WARNING: No common canonical factors found!");
+		return Id(B), Id(B), 0;
+	end if;
+end function;
+
+/* Verification 
+Given the correct private braids containing cloaking and concealed 
+cloaking elements W1, W2 and our forgeries W1Forge, W2Forge, we check 
+whether the permutation braids of W1 and W1Forge and of W2 and W2Forge 
+coincide respectively.
+Moreover, whether W1 = W1Forge mod D^2 and W2 = W2Forge mod D^2. 
+
+Alternatively, we take a random message digest MSG2 and check whether 
+W1 * Encoded MSG2 * W2 = W1Forge * Encoded MSG2 * W2Forge and thus whether 
+we have a valid signature. 
+
+Input: W1, W2, W1Forge, W2Forge
+Output: 1, if the permutation braids coincide / we get a valid signature
+	0, otherwise */
+
+verify_forgery := function(W1, W2, W1Forge, W2Forge)
+	// Variant 1) Check for one randomly generated message, whether 
+	// we get a valid signature. 
+
+	//Generate random message digest.
+	/* MSG2 := [];
+	for i in [1..2*SecLvl] do
+		MSG2[i] := Random({0,1});
+	end for;
+	
+	//Compute the signature with legitimately produced W1, W2 for MSG2
+	Sig_MSG2 := W1*encode_msg(MSG2) *W2; 
+	//Compute forgery for MSG2
+	Forgery := W1Forge * encode_msg(MSG2) * W2Forge;
+	//Compare Forgery with legitimately produced signature
+	if Forgery eq Sig_MSG2 then
+		return 1;
+	else
+		return 0;
+	end if;*/
+	
+	/* Variant2, check whether the permutation braids of our forged 
+	braids coincide with the ones of W1, W2. If so this yields a 		
+	universal forgery attack.*/
+
+	LeftNormalForm(~W1);
+	LeftNormalForm(~W2);
+	LeftNormalForm(~W1Forge);
+	LeftNormalForm(~W2Forge);
+	if (CFP(W1)[3] eq CFP(W1Forge)[3]) and (CFP(W2)[3] eq CFP(W2Forge)[3]) 
+	and ((CFP(W1)[2]-CFP(W1Forge)[2]) mod 2 eq 0) 
+	and ((CFP(W2)[2]-CFP(W2Forge)[2]) mod 2 eq 0) then
+		return 1;
+	else
+		return 0;
+	end if;
+end function;
