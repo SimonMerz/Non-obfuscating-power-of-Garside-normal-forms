@@ -1,6 +1,6 @@
 /* -------------------------------------
 Simon-Philipp Merz September 2018
-See "On the (non) obfuscating powers of WalnutDSA" by Simon-Philipp Merz and Christophe Petit
+See "Factoring Products of Braids via Garside Normal Form" by Simon-Philipp Merz and Christophe Petit
 
 This file allows to test our approach described in the paper above to solve the CSP on randomly generated CSP instances of words of a given length.
 ---------------------------------------*/
