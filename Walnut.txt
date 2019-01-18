@@ -1,6 +1,6 @@
 /* -------------------------------------
 Simon-Philipp Merz September 2018
-See "On the (non) obfuscating powers of WalnutDSA" by Simon-Philipp Merz and Christophe Petit
+See "Factoring Products of Braids via Garside Normal Form" by Simon-Philipp Merz and Christophe Petit
 
 This file contains the necessary parts of WalnutDSA implemented in MAGMA to test our attack.
 ---------------------------------------*/
